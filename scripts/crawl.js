@@ -87,43 +87,6 @@ async function fetchSecurityGrade(url) {
   }
 }
 
-// ─── PageSpeed Insights (Lighthouse) ─────────────────────────────────────
-// Docs: https://developers.google.com/speed/docs/insights/v5/get-started
-async function fetchPageSpeed(url, strategy = "mobile") {
-  try {
-    const apiUrl = `https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=${strategy}&category=performance&category=accessibility&category=best-practices&category=seo&key=AIzaSyD92ywF5oQc2e1cHZkUL6a_3YcLbX8GJ2A`;
-    console.error(`[pagespeed] Fetching ${strategy} scores for ${url}...`);
-    const res = await fetch(apiUrl);
-    if (!res.ok) {
-      console.error(`[pagespeed] Failed (${strategy}): ${res.status}`);
-      return null;
-    }
-    const data = await res.json();
-    const lh = data.lighthouseResult;
-    if (!lh) return null;
-    const audits = lh.audits || {};
-    const cats = lh.categories || {};
-    const result = {
-      strategy,
-      performance: Math.round((cats.performance?.score ?? 0) * 100),
-      accessibility: Math.round((cats.accessibility?.score ?? 0) * 100),
-      bestPractices: Math.round((cats["best-practices"]?.score ?? 0) * 100),
-      seo: Math.round((cats.seo?.score ?? 0) * 100),
-      lcp: audits["largest-contentful-paint"]?.displayValue || null,
-      cls: audits["cumulative-layout-shift"]?.displayValue || null,
-      fcp: audits["first-contentful-paint"]?.displayValue || null,
-      tbt: audits["total-blocking-time"]?.displayValue || null,
-      tti: audits["interactive"]?.displayValue || null,
-      speedIndex: audits["speed-index"]?.displayValue || null,
-    };
-    console.error(`[pagespeed] ${strategy}: perf=${result.performance} a11y=${result.accessibility} seo=${result.seo}`);
-    return result;
-  } catch (err) {
-    console.error(`[pagespeed] Error (${strategy}): ${err.message}`);
-    return null;
-  }
-}
-
 // ─── Tech stack fingerprinting ────────────────────────────────────────────
 const TECH_PATTERNS = {
   cms: [
@@ -472,8 +435,6 @@ async function crawl(rootUrl, maxPages) {
   // Fire long-running external scans in parallel ──────────────────────────
   const securityPromise = fetchSecurityGrade(normalizedRoot);
   const sitemapPromise = fetchSitemapStats(origin);
-  const pagespeedMobilePromise = fetchPageSpeed(normalizedRoot, "mobile");
-  const pagespeedDesktopPromise = fetchPageSpeed(normalizedRoot, "desktop");
 
   while (queue.length > 0 && pages.length < maxPages) {
     const url = queue.shift();
@@ -523,11 +484,9 @@ async function crawl(rootUrl, maxPages) {
     topPage?.title?.split(/[-|–—·:]/)[0]?.trim() ||
     new URL(normalizedRoot).hostname.replace(/^www\./, "").split(".")[0];
 
-  const [security, sitemap, pagespeedMobile, pagespeedDesktop] = await Promise.all([
+  const [security, sitemap] = await Promise.all([
     securityPromise,
     sitemapPromise,
-    pagespeedMobilePromise,
-    pagespeedDesktopPromise,
   ]);
 
   const adIntelligence = buildAdIntelligence(normalizedRoot, aggregatedTech, brandName);
@@ -552,10 +511,6 @@ async function crawl(rootUrl, maxPages) {
     sitemap,
     robotsTxt,
     security,
-    pagespeed: {
-      mobile: pagespeedMobile,
-      desktop: pagespeedDesktop,
-    },
     techStack: aggregatedTech,
     contentFreshness: siteFreshness,
     adIntelligence,
@@ -569,12 +524,10 @@ async function crawl(rootUrl, maxPages) {
   writeFileSync(outFile, JSON.stringify(output, null, 2));
   console.error(`[crawl] Done. ${pages.length} pages → ${outFile}`);
   if (security) console.error(`[security] Final grade: ${security.grade} (${security.score}/100)`);
-  if (pagespeedMobile) console.error(`[pagespeed] Mobile perf: ${pagespeedMobile.performance}/100`);
   console.log(JSON.stringify({
     success: true,
     pages: pages.length,
     security,
-    pagespeed: output.pagespeed,
     techStack: aggregatedTech,
     outputFile: outFile,
   }));

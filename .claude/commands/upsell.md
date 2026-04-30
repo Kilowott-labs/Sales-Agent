@@ -99,12 +99,77 @@ the report.
 
 ---
 
+### Step 5b — Chrome DevTools deep scan (MCP tools)
+
+Use the `chrome-devtools` MCP tools to collect real browser data that the
+static crawl cannot see. This provides Lighthouse scores, JS console errors,
+and network analysis — no API key required.
+
+**Client homepage audit:**
+
+1. Open a new page: `new_page`
+2. Navigate to the client homepage: `navigate_page` with `<CLIENT_URL>`
+3. Wait for load: `wait_for` with `load` event
+4. Run Lighthouse: `lighthouse_audit` — captures performance, accessibility,
+   best-practices, SEO scores plus Core Web Vitals (LCP, CLS, FCP, TBT)
+5. Collect JS console output: `list_console_messages` — errors and warnings
+   reveal broken scripts, missing resources, and silent failures
+6. Collect network requests: `list_network_requests` — reveals third-party
+   script weight, failed requests, uncompressed assets, slow API calls
+
+**If competitor was provided, repeat steps 1–6 for the competitor homepage.**
+
+After collecting, organize into this structure and write to
+`reports/<CLIENT_DOMAIN>/devtools-output.json`:
+
+```json
+{
+  "client": {
+    "url": "<CLIENT_URL>",
+    "lighthouse": {
+      "performance": 0,
+      "accessibility": 0,
+      "bestPractices": 0,
+      "seo": 0,
+      "lcp": "N/A",
+      "cls": "N/A",
+      "fcp": "N/A",
+      "tbt": "N/A"
+    },
+    "consoleErrors": [],
+    "consoleWarnings": [],
+    "networkRequests": {
+      "total": 0,
+      "failed": [],
+      "thirdParty": [],
+      "largestAssets": []
+    }
+  },
+  "competitor": null
+}
+```
+
+`consoleErrors`: array of `{ text, url, line }` for `error`-level messages.
+`consoleWarnings`: array for `warn`-level messages.
+`networkRequests.failed`: requests where status >= 400 or request failed entirely.
+`networkRequests.thirdParty`: requests to domains other than the site's own domain.
+`networkRequests.largestAssets`: top 5 by transfer size with url + size in KB.
+
+If the `chrome-devtools` MCP is not available (not installed), skip this step,
+set devtools data to null, and note it in the report. To install:
+```
+claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
+```
+
+---
+
 ### Step 6 — Read the data, then dispatch three sub-agents in parallel
 
-First, read the three JSON files so you can brief the sub-agents with
+First, read the four JSON files so you can brief the sub-agents with
 pointers to specific findings:
 - `reports/<CLIENT_DOMAIN>/crawl-output.json`
 - `reports/<CLIENT_DOMAIN>/a11y-output.json`
+- `reports/<CLIENT_DOMAIN>/devtools-output.json`
 - `reports/<CLIENT_DOMAIN>/competitor-output.json` (if competitor was provided)
 
 Then **dispatch three specialist sub-agents in a single message (parallel).**
@@ -114,7 +179,7 @@ markdown section ready to be dropped into the final report.
 
 **Agent 1 — Upsell / Revenue analyst**
 ```
-You are a senior sales strategist. Read crawl-output.json (and
+You are a senior sales strategist. Read crawl-output.json, devtools-output.json (and
 competitor-output.json if present). Your job is to identify revenue
 opportunities and missing features the agency can sell.
 
@@ -130,6 +195,11 @@ Look specifically at:
 - sitemap: low URL count → content gap. No sitemap → SEO hygiene upsell.
 - per-page features: missing live chat, booking, newsletter, e-commerce,
   search, lead capture, pricing transparency.
+- devtools-output.json networkRequests.thirdParty: large or slow third-party
+  scripts (tag managers, chat widgets, trackers) are candidates for a
+  performance optimisation / tag management upsell.
+- devtools-output.json networkRequests.largestAssets: unoptimised images or
+  uncompressed bundles → media pipeline / performance upsell.
 - Competitor gaps: anything competitor has that client lacks = flag HIGH.
 
 Produce a markdown section titled "## 💰 Upsell Opportunities" with 5-10
@@ -144,13 +214,17 @@ Return ONLY the markdown section. No preamble.
 
 **Agent 2 — Security & Compliance analyst**
 ```
-You are a senior security consultant. Read crawl-output.json and
-a11y-output.json (and competitor-output.json if present).
+You are a senior security consultant. Read crawl-output.json, devtools-output.json,
+and a11y-output.json (and competitor-output.json if present).
 
 Lead with the Mozilla Observatory grade. If C or below → High impact.
 Then work through:
 - Exposed server fingerprints (x-powered-by, server version leaks)
-- PageSpeed Lighthouse best-practices score (low = security gaps)
+- devtools-output.json lighthouse.bestPractices score — low score = security gaps
+- devtools-output.json consoleErrors: JS errors on load = broken experience,
+  potential data loss, or insecure script loading
+- devtools-output.json networkRequests.failed: failed requests indicate broken
+  integrations, missing resources, or misconfigured security policies (CSP blocking)
 - axe-core violations by impact (critical + serious = hard findings)
 - Missing privacy policy / cookie banner inconsistency
 - HTTP vs HTTPS
@@ -173,21 +247,27 @@ Return ONLY the markdown section.
 **Agent 3 — Design & UX / Performance analyst**
 ```
 You are a senior CRO and web performance specialist. Read crawl-output.json
-(and competitor-output.json if present).
+and devtools-output.json (and competitor-output.json if present).
 
-Lead with PageSpeed:
-- If mobile performance score < 50 → High impact
-- Call out LCP, CLS, INP if bad (LCP > 2.5s, CLS > 0.1)
-- Compare mobile vs desktop gap — if mobile is much worse, that's the
-  dominant customer experience today.
+Lead with Lighthouse performance from devtools-output.json client.lighthouse:
+- If performance < 50 → High impact
+- Call out LCP, CLS if bad (LCP > 2.5s, CLS > 0.1)
+- Note FCP and TBT as supporting evidence
 
 Then:
+- devtools-output.json consoleErrors: every JS error = user-visible breakage
+  on some browser/device. List the top errors with their source URL.
+- devtools-output.json consoleWarnings: deprecation warnings signal
+  tech-debt and upcoming breakage.
+- devtools-output.json networkRequests.thirdParty: count + estimate total
+  KB of third-party payloads — high third-party weight is a core CWV killer.
+- devtools-output.json networkRequests.largestAssets: call out the single
+  biggest offender by name and size.
 - CTA above the fold on high-weight pages (homepage, pricing, product)
 - Heading hierarchy (H1/H2 missing on key pages)
-- Cold load time per page (loadTime > 3000ms on a weight-8+ page = High)
+- Cold load time per page from crawl-output (loadTime > 3000ms on a weight-8+ page = High)
 - Viewport meta missing (mobile broken)
-- Thin/weak forms, missing search
-- Competitor UX gap (if competitor PageSpeed is better, flag it)
+- Competitor UX gap (if competitor Lighthouse is better, flag it with exact scores)
 - Outdated content in navigation (e.g. "COVID-19" in 2026)
 
 Produce a markdown section titled "## 🎨 Design & UX" with 5-8 findings,
@@ -225,13 +305,16 @@ detected"), the **headline weakness**, and the **biggest revenue lever.**
 |---|---|
 | CMS / Framework | [from techStack.cms or .framework] |
 | Hosting / CDN | [techStack.hosting] |
-| Mobile Lighthouse | [pagespeed.mobile.performance]/100 |
-| Desktop Lighthouse | [pagespeed.desktop.performance]/100 |
-| LCP (mobile) | [pagespeed.mobile.lcp] |
+| Mobile Lighthouse | [devtools.client.lighthouse.performance]/100 |
+| Desktop Lighthouse | [devtools.client.lighthouse.performance — note: run desktop separately if needed]/100 |
+| LCP (mobile) | [devtools.client.lighthouse.lcp] |
+| CLS (mobile) | [devtools.client.lighthouse.cls] |
 | Security grade | [security.grade] ([security.score]/100) |
 | Analytics in place | [techStack.analytics.join(", ") or "None detected"] |
 | Ad pixels | [techStack.ads.join(", ") or "None detected"] |
 | Latest content | [contentFreshness.daysSinceLatest] days ago |
+| JS console errors | [devtools.client.consoleErrors.length or "0"] |
+| Failed network requests | [devtools.client.networkRequests.failed.length or "0"] |
 | A11y critical issues | [a11y.summary.totalCritical or "scan unavailable"] |
 
 [Insert Agent 1 output verbatim]
@@ -271,8 +354,10 @@ Snapshot and the first sub-agent section:
 | HTTPS | ✅/❌ | ✅/❌ | — |
 | Security grade | [grade]/[score] | [grade]/[score] | [who wins] |
 | Mobile Lighthouse | [N]/100 | [N]/100 | [who wins] |
-| Desktop Lighthouse | [N]/100 | [N]/100 | [who wins] |
 | LCP (mobile) | [value] | [value] | [who wins] |
+| CLS (mobile) | [value] | [value] | [who wins] |
+| JS console errors | [N] | [N] | [who wins] |
+| Failed network requests | [N] | [N] | [who wins] |
 | CMS / stack | [name] | [name] | — |
 | Hosting / CDN | [name] | [name] | — |
 | Analytics | [list or ❌] | [list or ❌] | [who wins] |

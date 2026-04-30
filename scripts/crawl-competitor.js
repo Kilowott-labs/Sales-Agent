@@ -72,35 +72,6 @@ async function fetchSecurityGrade(url) {
   }
 }
 
-// ─── PageSpeed Insights ───────────────────────────────────────────────────
-async function fetchPageSpeed(url, strategy = "mobile") {
-  try {
-    const apiUrl = `https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=${strategy}&category=performance&category=accessibility&category=best-practices&category=seo&key=AIzaSyD92ywF5oQc2e1cHZkUL6a_3YcLbX8GJ2A`;
-    console.error(`[pagespeed] Competitor ${strategy}...`);
-    const res = await fetch(apiUrl);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const lh = data.lighthouseResult;
-    if (!lh) return null;
-    const audits = lh.audits || {};
-    const cats = lh.categories || {};
-    return {
-      strategy,
-      performance: Math.round((cats.performance?.score ?? 0) * 100),
-      accessibility: Math.round((cats.accessibility?.score ?? 0) * 100),
-      bestPractices: Math.round((cats["best-practices"]?.score ?? 0) * 100),
-      seo: Math.round((cats.seo?.score ?? 0) * 100),
-      lcp: audits["largest-contentful-paint"]?.displayValue || null,
-      cls: audits["cumulative-layout-shift"]?.displayValue || null,
-      fcp: audits["first-contentful-paint"]?.displayValue || null,
-      tbt: audits["total-blocking-time"]?.displayValue || null,
-    };
-  } catch (err) {
-    console.error(`[pagespeed] Competitor error: ${err.message}`);
-    return null;
-  }
-}
-
 // ─── Tech stack (shared patterns, compact) ────────────────────────────────
 const TECH_PATTERNS = {
   cms: [
@@ -319,8 +290,6 @@ async function crawl(rootUrl, maxPages) {
   console.error(`[competitor-crawl] Starting: ${normalizedRoot} (max ${maxPages} pages)`);
 
   const securityPromise = fetchSecurityGrade(normalizedRoot);
-  const pagespeedMobilePromise = fetchPageSpeed(normalizedRoot, "mobile");
-  const pagespeedDesktopPromise = fetchPageSpeed(normalizedRoot, "desktop");
 
   let sitemapFound = false;
   try {
@@ -360,9 +329,7 @@ async function crawl(rootUrl, maxPages) {
     { analytics: [], ads: [], payments: [] }
   );
 
-  const [security, pagespeedMobile, pagespeedDesktop] = await Promise.all([
-    securityPromise, pagespeedMobilePromise, pagespeedDesktopPromise,
-  ]);
+  const security = await securityPromise;
 
   const output = {
     rootUrl: normalizedRoot,
@@ -370,7 +337,6 @@ async function crawl(rootUrl, maxPages) {
     totalPages: pages.length,
     sitemapFound,
     security,
-    pagespeed: { mobile: pagespeedMobile, desktop: pagespeedDesktop },
     techStack: aggregatedTech,
     pages,
   };
@@ -384,7 +350,6 @@ async function crawl(rootUrl, maxPages) {
     success: true,
     pages: pages.length,
     security,
-    pagespeed: output.pagespeed,
     techStack: aggregatedTech,
     outputFile: outFile,
   }));

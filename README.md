@@ -6,9 +6,15 @@ No separate AI API key needed. Claude does the analysis. The repo provides the c
 
 ---
 
+## What's new in v1.2
+
+- **Chrome DevTools MCP** — replaces PageSpeed API. No API key required. Real Lighthouse scores via the browser, plus JS console errors, network waterfall, third-party script analysis, and failed request detection.
+- **JS console error surfacing** — catches silent JS failures on the homepage that the client doesn't know about. Hard talking point.
+- **Network analysis** — third-party script weight, largest assets, failed requests — concrete evidence for performance upsell.
+- **Expanded Snapshot table** — now includes JS console errors and failed network requests alongside Lighthouse and security grade.
+
 ## What's new in v1.1
 
-- **Real performance data** — PageSpeed Insights (Lighthouse) for mobile + desktop, including Core Web Vitals (LCP, CLS, INP, FCP, TBT)
 - **Tech stack fingerprinting** — detects CMS, framework, analytics, ad pixels, payment processors, live chat, email platforms, and hosting/CDN
 - **SEO depth** — title/description length, Open Graph, Twitter Card, JSON-LD, canonical, hreflang, sitemap stats
 - **Content freshness** — when was the site last updated?
@@ -51,7 +57,16 @@ git clone https://github.com/Kilowott-labs/Sales-Agent
 cd upsell-bot
 ```
 
-### 2. Open in Claude Code
+### 2. Install the Chrome DevTools MCP
+
+```bash
+claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
+```
+
+This is a one-time setup. It enables Lighthouse scoring, JS console error capture,
+and network analysis — no API keys required.
+
+### 3. Open in Claude Code
 
 ```bash
 claude .
@@ -89,7 +104,7 @@ Every audit produces a Markdown file at `reports/<domain>-audit.md` **and** a br
 | Section | Contents |
 |---|---|
 | **Executive Summary** | Named tech stack, headline weakness, biggest revenue lever |
-| **Snapshot table** | CMS, hosting, Lighthouse scores, LCP, security grade, analytics, ad pixels, content age, critical a11y count |
+| **Snapshot table** | CMS, hosting, Lighthouse scores, LCP, CLS, security grade, analytics, ad pixels, content age, JS errors, failed requests, critical a11y count |
 | **Head-to-Head** *(competitor only)* | 15+ row comparison including PageSpeed, stack, pixels |
 | **💰 Upsell Opportunities** | Missing features and revenue gaps — each with impact rating and sales angle |
 | **🔒 Security & Accessibility** | Observatory grade + WCAG critical/serious violations |
@@ -109,11 +124,9 @@ Each finding includes:
 ```
 ┌─────────────────┐       ┌──────────────────────┐
 │ crawl.js        │ ───▶  │ crawl-output.json    │
-│ (HTML + head    │       │  • pages[]           │
-│  ers, parallel  │       │  • security          │
-│  fetches:       │       │  • pagespeed {mob/   │
-│  Observatory,   │       │    desk}             │
-│  PageSpeed,     │       │  • techStack         │
+│ (HTML + headers │       │  • pages[]           │
+│  parallel fetch │       │  • security          │
+│  Observatory,   │       │  • techStack         │
 │  sitemap)       │       │  • contentFreshness  │
 └─────────────────┘       │  • adIntelligence    │
                           │  • sitemap           │
@@ -124,6 +137,17 @@ Each finding includes:
 │  axe-core,      │       │  • violations by     │
 │  top 3 pages)   │       │    impact            │
 └─────────────────┘       └──────────────────────┘
+┌─────────────────┐       ┌──────────────────────┐
+│ Chrome DevTools │ ───▶  │ devtools-output.json │
+│ MCP tools       │       │  • lighthouse scores │
+│ (Claude calls   │       │  • consoleErrors[]   │
+│  lighthouse_    │       │  • networkRequests   │
+│  audit,         │       │    • failed[]        │
+│  list_console_  │       │    • thirdParty[]    │
+│  messages,      │       │    • largestAssets[] │
+│  list_network_  │       │  • competitor{}      │
+│  requests)      │       └──────────────────────┘
+└─────────────────┘
 ┌─────────────────┐       ┌──────────────────────┐
 │ crawl-          │ ───▶  │ competitor-          │
 │ competitor.js   │       │ output.json          │
@@ -139,8 +163,8 @@ Each finding includes:
          │
          ▼
 ┌─────────────────────────────────────────┐
-│ save-report.js   → reports/<dom>-audit.md │
-│ render-pdf.js    → reports/<dom>-audit.pdf│
+│ save-report.js   → reports/<dom>/report.md │
+│ render-pdf.js    → reports/<dom>/report.pdf│
 └─────────────────────────────────────────┘
 ```
 
@@ -184,33 +208,23 @@ Each detection maps to a potential upsell conversation. A Shopify site with no K
 
 ---
 
-## How the PageSpeed Insights scan works
+## How the Lighthouse scan works (Chrome DevTools MCP)
 
-The crawler calls Google's PageSpeed Insights v5 API for the homepage in both **mobile** and **desktop** strategies, in parallel with the crawl. **An API key is required.**
+Lighthouse runs via the `chrome-devtools` MCP — Claude calls `lighthouse_audit` directly
+against a real browser tab. No API key, no quota limits, no external service.
 
-### Getting a PageSpeed API key
+**What it captures:**
+- **Lighthouse scores:** performance, accessibility, best practices, SEO (0–100)
+- **Core Web Vitals:** LCP, CLS, FCP, TBT
+- **JS console errors and warnings** — silent failures the client doesn't know about
+- **Network waterfall** — third-party script weight, largest assets, failed requests
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project (or select an existing one)
-3. Navigate to **APIs & Services → Library**
-4. Search for **"PageSpeed Insights API"** and enable it
-5. Go to **APIs & Services → Credentials → Create Credentials → API key**
-6. Copy the key
-
-### Adding the key to the scripts
-
-Open `scripts/crawl.js` and `scripts/crawl-competitor.js`. In the `fetchPageSpeed` function, find the `apiUrl` line and replace `key=YOUR_KEY` with your actual key:
-
-```js
-const apiUrl = `https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=...&key=YOUR_KEY`;
+**One-time setup:**
+```bash
+claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
 ```
 
-Returns:
-- **Lighthouse scores:** performance, accessibility, best practices, SEO (0–100)
-- **Core Web Vitals:** LCP, CLS, INP (displayValue strings)
-- **Supporting metrics:** FCP, TBT, TTI, Speed Index
-
-Mobile scores get priority in the analysis because Google's Page Experience ranking uses mobile scores for indexing.
+If the MCP is not installed, the agent skips this step and notes it in the report.
 
 ---
 
@@ -252,13 +266,20 @@ upsell-bot/
 │   └── commands/
 │       └── upsell.md            ← slash command + orchestration prompt
 ├── scripts/
-│   ├── crawl.js                 ← client crawl + PageSpeed + tech + SEO + freshness + ad intel
+│   ├── crawl.js                 ← client crawl + Observatory security + tech + SEO + freshness + ad intel
 │   ├── crawl-competitor.js      ← competitor crawl with the same enrichments
 │   ├── a11y-scan.js             ← puppeteer + axe-core deep accessibility scan
 │   ├── render-pdf.js            ← markdown → branded A4 PDF (puppeteer + marked)
 │   ├── ensure-chromium.js       ← postinstall safety net — guarantees Chromium is installed
 │   └── save-report.js           ← saves markdown to reports/
-├── reports/                     ← generated .md and .pdf land here
+├── reports/
+│   └── <domain>/
+│       ├── crawl-output.json    ← static crawl data
+│       ├── a11y-output.json     ← axe-core violations
+│       ├── devtools-output.json ← Lighthouse + console errors + network (via Chrome DevTools MCP)
+│       ├── competitor-output.json
+│       ├── report.md
+│       └── report.pdf
 ├── package.json
 └── README.md
 ```
