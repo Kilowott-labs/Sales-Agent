@@ -1,8 +1,2 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node:*)",
-      "Bash(npm install:*)"
-    ]
-  }
-}
+{"permissions":{"allow":["Bash(node:*)","Bash(npm
+  install:*)"]},"enabledMcpjsonServers":["chrome-devtools"]}

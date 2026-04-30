@@ -13,16 +13,6 @@ No separate AI API key needed. Claude does the analysis. The repo provides the c
 - **Network analysis** — third-party script weight, largest assets, failed requests — concrete evidence for performance upsell.
 - **Expanded Snapshot table** — now includes JS console errors and failed network requests alongside Lighthouse and security grade.
 
-## What's new in v1.1
-
-- **Tech stack fingerprinting** — detects CMS, framework, analytics, ad pixels, payment processors, live chat, email platforms, and hosting/CDN
-- **SEO depth** — title/description length, Open Graph, Twitter Card, JSON-LD, canonical, hreflang, sitemap stats
-- **Content freshness** — when was the site last updated?
-- **Ad intelligence deep links** — Meta Ad Library, Google Ads Transparency, LinkedIn, TikTok — click-ready URLs for the sales rep
-- **Deep accessibility scan** — axe-core WCAG 2.2 AA violations on the top 3 highest-weight pages, grouped by severity
-- **Branded PDF output** — a polished A4 deliverable rendered via Puppeteer
-- **Parallel sub-agent analysis** — upsell / security / UX run as three Claude agents in parallel for deeper per-dimension analysis
-
 ---
 
 ## What it does
