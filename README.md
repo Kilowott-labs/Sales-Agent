@@ -105,7 +105,7 @@ Every audit produces a Markdown file at `reports/<domain>-audit.md` **and** a br
 
 Each finding includes:
 - **Impact** rating: High / Medium / Low (weighted by pageWeight — homepage issues rank higher)
-- **Sales angle**: one sentence the rep says out loud on the call
+- **Sales angle**: one sentence the rep says out loud on the call.
 
 ---
 
