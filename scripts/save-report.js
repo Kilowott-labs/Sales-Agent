@@ -15,10 +15,10 @@ mkdirSync(outputDir, { recursive: true });
 
 const filename = customPath || join(outputDir, `${(domain || "audit").replace(/[^a-z0-9-]/gi, "-")}-audit.md`);
 
-// Read from stdin if available, otherwise check for crawl-output to derive domain
+// Read from stdin (fd 0 works cross-platform including Windows)
 let content = "";
 try {
-  content = readFileSync("/dev/stdin", "utf-8");
+  content = readFileSync(0, "utf-8");
 } catch {
   console.error("No stdin content. Pipe the report markdown into this script.");
   process.exit(1);

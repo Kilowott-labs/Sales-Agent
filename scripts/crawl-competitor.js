@@ -2,7 +2,7 @@
 /**
  * crawl-competitor.js — Crawls a competitor URL for benchmarking.
  * Usage: node scripts/crawl-competitor.js <url> <clientDomain> [maxPages]
- * Output: writes reports/<clientDomain>/competitor-output.json
+ * Output: writes reports/<clientDomain>/competitor-<competitorDomain>-output.json
  */
 
 import * as cheerio from "cheerio";
@@ -343,7 +343,14 @@ async function crawl(rootUrl, maxPages) {
 
   const outDir = `reports/${clientDomain}`;
   mkdirSync(outDir, { recursive: true });
-  const outFile = `${outDir}/competitor-output.json`;
+  let competitorDomain;
+  try {
+    competitorDomain = new URL(rootUrl.startsWith("http") ? rootUrl : `https://${rootUrl}`)
+      .hostname.replace(/^www\./, "");
+  } catch {
+    competitorDomain = rootUrl.replace(/[^a-z0-9.-]/gi, "-");
+  }
+  const outFile = `${outDir}/competitor-${competitorDomain}-output.json`;
   writeFileSync(outFile, JSON.stringify(output, null, 2));
   console.error(`[competitor-crawl] Done. ${pages.length} pages → ${outFile}`);
   console.log(JSON.stringify({

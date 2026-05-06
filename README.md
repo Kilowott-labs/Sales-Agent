@@ -6,6 +6,12 @@ No separate AI API key needed. Claude does the analysis. The repo provides the c
 
 ---
 
+## What's new in v1.3
+
+- **Multi-competitor benchmarking** — paste multiple competitor URLs separated by commas. Each competitor gets its own full crawl, Lighthouse audit, and security scan. The Head-to-Head table expands to as many columns as competitors provided.
+- **Per-competitor output files** — each competitor writes to its own `competitor-<domain>-output.json`, so runs never overwrite each other.
+- **Windows compatibility fix** — `save-report.js` now uses fd 0 instead of `/dev/stdin` for cross-platform stdin reading.
+
 ## What's new in v1.2
 
 - **Chrome DevTools MCP** — replaces PageSpeed API. No API key required. Real Lighthouse scores via the browser, plus JS console errors, network waterfall, third-party script analysis, and failed request detection.
@@ -21,7 +27,7 @@ Type `/upsell` in Claude Code and the agent will:
 
 1. Ask for the client's website URL
 2. Ask if this is an existing project (to avoid pitching work already delivered)
-3. Ask if you want to benchmark against a competitor site
+3. Ask if you want to benchmark against competitor sites (paste one URL or multiple comma-separated)
 4. **Crawl the site** (up to 15 pages) and run in parallel:
    - Mozilla Observatory security scan
    - PageSpeed Insights (mobile + desktop)
@@ -32,7 +38,7 @@ Type `/upsell` in Claude Code and the agent will:
    - 💰 Upsell analyst — missing features, revenue gaps, ad-library findings
    - 🔒 Security & compliance analyst — Observatory grade + WCAG violations
    - 🎨 Design & UX analyst — CWV, CTAs, conversion flow, mobile readiness
-7. Merge findings into a Markdown report with executive summary, snapshot table, and (if a competitor was provided) a head-to-head comparison table
+7. Merge findings into a Markdown report with executive summary, snapshot table, and (if competitors were provided) a head-to-head comparison table with one column per competitor
 8. **Render the report to a branded PDF** ready to hand to the client or sales rep
 9. Save both files to `reports/<domain>-audit.md` and `reports/<domain>-audit.pdf`
 
@@ -95,7 +101,7 @@ Every audit produces a Markdown file at `reports/<domain>-audit.md` **and** a br
 |---|---|
 | **Executive Summary** | Named tech stack, headline weakness, biggest revenue lever |
 | **Snapshot table** | CMS, hosting, Lighthouse scores, LCP, CLS, security grade, analytics, ad pixels, content age, JS errors, failed requests, critical a11y count |
-| **Head-to-Head** *(competitor only)* | 15+ row comparison including PageSpeed, stack, pixels |
+| **Head-to-Head** *(competitors only)* | N-column comparison (one per competitor) including PageSpeed, stack, pixels, security grade, live chat, CTA |
 | **💰 Upsell Opportunities** | Missing features and revenue gaps — each with impact rating and sales angle |
 | **🔒 Security & Accessibility** | Observatory grade + WCAG critical/serious violations |
 | **🎨 Design & UX** | CWV, CRO, mobile, conversion flow |
@@ -135,13 +141,14 @@ Each finding includes:
 │  audit,         │       │    • failed[]        │
 │  list_console_  │       │    • thirdParty[]    │
 │  messages,      │       │    • largestAssets[] │
-│  list_network_  │       │  • competitor{}      │
+│  list_network_  │       │  • competitors[]     │
 │  requests)      │       └──────────────────────┘
 └─────────────────┘
-┌─────────────────┐       ┌──────────────────────┐
-│ crawl-          │ ───▶  │ competitor-          │
-│ competitor.js   │       │ output.json          │
-└─────────────────┘       └──────────────────────┘
+┌─────────────────┐       ┌────────────────────────────────┐
+│ crawl-          │ ───▶  │ competitor-<domain>-output.json│
+│ competitor.js   │       │ (one file per competitor URL)  │
+│ (per competitor)│       └────────────────────────────────┘
+└─────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────┐
@@ -267,7 +274,7 @@ upsell-bot/
 │       ├── crawl-output.json    ← static crawl data
 │       ├── a11y-output.json     ← axe-core violations
 │       ├── devtools-output.json ← Lighthouse + console errors + network (via Chrome DevTools MCP)
-│       ├── competitor-output.json
+│       ├── competitor-<domain>-output.json  ← one file per competitor URL
 │       ├── report.md
 │       └── report.pdf
 ├── package.json

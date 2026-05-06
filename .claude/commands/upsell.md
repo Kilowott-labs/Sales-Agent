@@ -47,9 +47,15 @@ Note which items are already done — exclude these from upsell findings.
 
 ---
 
-### Step 3 — Ask for a competitor URL
+### Step 3 — Ask for competitor URLs
 
-**"Do you have a competitor site you'd like to benchmark against? (paste a URL or say 'no')"**
+**"Do you have any competitor sites you'd like to benchmark against? (paste a URL or multiple URLs separated by commas, or say 'no')"**
+
+After the user responds, if they provided URLs:
+- Split by comma, trim whitespace from each
+- Ensure each URL starts with `http://` or `https://` — prepend `https://` if missing
+- Count the URLs and confirm back: **"Got it — benchmarking against [N] competitor(s): [list domains]"**
+- Store as `COMPETITOR_URLS` array for use in later steps
 
 ---
 
@@ -77,11 +83,17 @@ node scripts/crawl.js <CLIENT_URL>
 ```
 Produces `reports/<CLIENT_DOMAIN>/crawl-output.json`.
 
-**If competitor was provided:**
+**If competitors were provided:**
+
+For each competitor URL in `COMPETITOR_URLS`, derive its domain slug (strip `https://`, `www.`, trailing slashes).
+Example: `https://www.example.com/` → `example.com`
+
+Run for **each** competitor:
 ```bash
 node scripts/crawl-competitor.js <COMPETITOR_URL> <CLIENT_DOMAIN>
 ```
-Produces `reports/<CLIENT_DOMAIN>/competitor-output.json`.
+Each produces `reports/<CLIENT_DOMAIN>/competitor-<COMPETITOR_DOMAIN>-output.json`.
+Run competitor crawls in parallel if multiple were provided.
 
 **Accessibility deep-scan (always run on client):**
 ```bash
@@ -110,14 +122,23 @@ and network analysis — no API key required.
 1. Open a new page: `new_page`
 2. Navigate to the client homepage: `navigate_page` with `<CLIENT_URL>`
 3. Wait for load: `wait_for` with `load` event
-4. Run Lighthouse: `lighthouse_audit` — captures performance, accessibility,
-   best-practices, SEO scores plus Core Web Vitals (LCP, CLS, FCP, TBT)
-5. Collect JS console output: `list_console_messages` — errors and warnings
+4. Run Lighthouse (accessibility, SEO, best-practices): `lighthouse_audit`
+   with `mode: "snapshot"` and `device: "desktop"` — snapshot avoids the
+   `Network.emulateNetworkConditions` timeout that navigation mode triggers
+   on slow sites. Note: performance score is NOT included in `lighthouse_audit`.
+5. Get Performance score separately using the trace tools:
+   a. `performance_start_trace` — begin recording
+   b. `navigate_page` with `<CLIENT_URL>` and `type: "reload"` — reload to
+      capture a cold load trace
+   c. `performance_stop_trace` — stop recording and retrieve metrics including
+      LCP, CLS, FCP, TBT, and overall Performance score
+6. Collect JS console output: `list_console_messages` — errors and warnings
    reveal broken scripts, missing resources, and silent failures
-6. Collect network requests: `list_network_requests` — reveals third-party
+7. Collect network requests: `list_network_requests` — reveals third-party
    script weight, failed requests, uncompressed assets, slow API calls
 
-**If competitor was provided, repeat steps 1–6 for the competitor homepage.**
+**If competitors were provided, repeat steps 1–7 for each competitor homepage.**
+Run each competitor audit sequentially (open a new tab per competitor, close it when done).
 
 After collecting, organize into this structure and write to
 `reports/<CLIENT_DOMAIN>/devtools-output.json`:
@@ -127,14 +148,18 @@ After collecting, organize into this structure and write to
   "client": {
     "url": "<CLIENT_URL>",
     "lighthouse": {
-      "performance": 0,
       "accessibility": 0,
       "bestPractices": 0,
       "seo": 0,
+      "note": "from lighthouse_audit snapshot"
+    },
+    "performance": {
+      "score": 0,
       "lcp": "N/A",
       "cls": "N/A",
       "fcp": "N/A",
-      "tbt": "N/A"
+      "tbt": "N/A",
+      "note": "from performance_start_trace / performance_stop_trace"
     },
     "consoleErrors": [],
     "consoleWarnings": [],
@@ -145,9 +170,36 @@ After collecting, organize into this structure and write to
       "largestAssets": []
     }
   },
-  "competitor": null
+  "competitors": [
+    {
+      "url": "<COMPETITOR_URL>",
+      "domain": "<COMPETITOR_DOMAIN>",
+      "lighthouse": {
+        "accessibility": 0,
+        "bestPractices": 0,
+        "seo": 0
+      },
+      "performance": {
+        "score": 0,
+        "lcp": "N/A",
+        "cls": "N/A",
+        "fcp": "N/A",
+        "tbt": "N/A"
+      },
+      "consoleErrors": [],
+      "consoleWarnings": [],
+      "networkRequests": {
+        "total": 0,
+        "failed": [],
+        "thirdParty": [],
+        "largestAssets": []
+      }
+    }
+  ]
 }
 ```
+
+`competitors` is an array — one entry per competitor URL. If no competitors provided, set `"competitors": []`.
 
 `consoleErrors`: array of `{ text, url, line }` for `error`-level messages.
 `consoleWarnings`: array for `warn`-level messages.
@@ -165,12 +217,12 @@ claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
 
 ### Step 6 — Read the data, then dispatch three sub-agents in parallel
 
-First, read the four JSON files so you can brief the sub-agents with
+First, read the JSON files so you can brief the sub-agents with
 pointers to specific findings:
 - `reports/<CLIENT_DOMAIN>/crawl-output.json`
 - `reports/<CLIENT_DOMAIN>/a11y-output.json`
 - `reports/<CLIENT_DOMAIN>/devtools-output.json`
-- `reports/<CLIENT_DOMAIN>/competitor-output.json` (if competitor was provided)
+- `reports/<CLIENT_DOMAIN>/competitor-<DOMAIN>-output.json` for each competitor (if any were provided)
 
 Then **dispatch three specialist sub-agents in a single message (parallel).**
 Use the Agent tool with `subagent_type: "general-purpose"` for each. Each
@@ -180,7 +232,7 @@ markdown section ready to be dropped into the final report.
 **Agent 1 — Upsell / Revenue analyst**
 ```
 You are a senior sales strategist. Read crawl-output.json, devtools-output.json (and
-competitor-output.json if present). Your job is to identify revenue
+all competitor-<domain>-output.json files if any competitors were provided). Your job is to identify revenue
 opportunities and missing features the agency can sell.
 
 Look specifically at:
@@ -200,13 +252,14 @@ Look specifically at:
   performance optimisation / tag management upsell.
 - devtools-output.json networkRequests.largestAssets: unoptimised images or
   uncompressed bundles → media pipeline / performance upsell.
-- Competitor gaps: anything competitor has that client lacks = flag HIGH.
+- Competitor gaps: anything any competitor has that client lacks = flag HIGH. If multiple competitors have the same feature, amplify urgency.
 
 Produce a markdown section titled "## 💰 Upsell Opportunities" with 5-10
 findings. Each finding:
 - ### [Title] — [page type if relevant]
 - **Impact:** High / Medium / Low (weighted by pageWeight of affected pages)
 - 2-3 sentence description citing the specific data point
+- > 💡 **Why this matters:** 1-2 sentences for a non-technical business owner. No jargon, no scores, no tech terms. Connect the finding to money lost, customers leaving, legal risk, or losing ground to a competitor.
 - > 💬 **Sales angle:** [one sentence the rep says on the call]
 
 Return ONLY the markdown section. No preamble.
@@ -215,7 +268,7 @@ Return ONLY the markdown section. No preamble.
 **Agent 2 — Security & Compliance analyst**
 ```
 You are a senior security consultant. Read crawl-output.json, devtools-output.json,
-and a11y-output.json (and competitor-output.json if present).
+and a11y-output.json (and all competitor-<domain>-output.json files if any competitors were provided).
 
 Lead with the Mozilla Observatory grade. If C or below → High impact.
 Then work through:
@@ -230,7 +283,7 @@ Then work through:
 - HTTP vs HTTPS
 - Outdated tech stack (e.g. PHP <7, unsupported CMS versions)
 - Compliance flags: GDPR, India DPDPA, WCAG 2.2 AA
-- Competitor security gap (if better/worse grade)
+- Competitor security gaps (compare grade vs each competitor; call out if any competitor scores better)
 
 If a11y-output.json has available:false, note that the deep accessibility
 scan was unavailable and fall back to the surface-level checks from
@@ -247,7 +300,7 @@ Return ONLY the markdown section.
 **Agent 3 — Design & UX / Performance analyst**
 ```
 You are a senior CRO and web performance specialist. Read crawl-output.json
-and devtools-output.json (and competitor-output.json if present).
+and devtools-output.json (and all competitor-<domain>-output.json files if any competitors were provided).
 
 Lead with Lighthouse performance from devtools-output.json client.lighthouse:
 - If performance < 50 → High impact
@@ -267,7 +320,7 @@ Then:
 - Heading hierarchy (H1/H2 missing on key pages)
 - Cold load time per page from crawl-output (loadTime > 3000ms on a weight-8+ page = High)
 - Viewport meta missing (mobile broken)
-- Competitor UX gap (if competitor Lighthouse is better, flag it with exact scores)
+- Competitor UX gaps (if any competitor Lighthouse is better, flag it with exact scores; if multiple competitors outperform client, escalate to High)
 - Outdated content in navigation (e.g. "COVID-19" in 2026)
 
 Produce a markdown section titled "## 🎨 Design & UX" with 5-8 findings,
@@ -317,6 +370,27 @@ detected"), the **headline weakness**, and the **biggest revenue lever.**
 | Failed network requests | [devtools.client.networkRequests.failed.length or "0"] |
 | A11y critical issues | [a11y.summary.totalCritical or "scan unavailable"] |
 
+## Why This Matters
+
+Write 3–5 bullet points for a non-technical business owner or decision-maker.
+No jargon. No scores. Each point must connect a specific finding to a business
+outcome — money lost, customers leaving, legal risk, or losing ground to a competitor.
+
+Rules:
+- Never say "Lighthouse score", "LCP", "CLS", "axe-core", or any tech term
+- Translate every metric into something a business owner feels: revenue, risk, reputation
+- If a competitor is better on a metric, say so by name
+- Maximum 2 sentences per bullet
+
+Examples of the right tone:
+- "Your website takes [X] seconds to load on a phone. Over half of mobile visitors leave if a page takes more than 3 seconds — that's customers you're paying to attract but losing before they see anything."
+- "Your site has no security certificate on key pages. Visitors see a browser warning that their connection 'may not be private' — this is a direct reason people abandon enquiry forms and checkouts."
+- "[COMPETITOR_DOMAIN] appears higher in Google search results because their site loads faster and is better structured. Every month that gap stays open, they pick up customers who searched for what you offer."
+- "Your website has no way to capture visitor email addresses. Every person who browses and leaves is gone forever — no way to follow up, no way to nurture them into a sale."
+
+Draw the points from the highest-impact findings across all three sub-agent sections.
+Prioritise findings that affect revenue, lead generation, or reputation above all else.
+
 [Insert Agent 1 output verbatim]
 
 [Insert Agent 2 output verbatim]
@@ -343,36 +417,43 @@ High-impact findings across all three sections.
 5 bullet points the rep can use verbatim.
 ```
 
-**If competitor WAS provided**, also include the head-to-head table between
-Snapshot and the first sub-agent section:
+**If competitors WERE provided**, also include the head-to-head table between
+Snapshot and "Why This Matters" (i.e. the order is: Snapshot → Head-to-Head → Why This Matters → sub-agent sections):
+
+The table has one column per competitor. Add as many `[COMPETITOR_N_DOMAIN]` columns as needed.
+The final column is **Leader** — the domain that wins overall most rows (or "Tie").
+
+IMPORTANT: In the Leader column, always use actual domain names (e.g. "✅ goa365.tv"), never generic labels like "Client wins" or "Competitor wins".
 
 ```markdown
 ## Head-to-Head Comparison
 
-| Feature | [Client] | [Competitor] | Gap? |
-|---------|----------|--------------|------|
-| HTTPS | ✅/❌ | ✅/❌ | — |
-| Security grade | [grade]/[score] | [grade]/[score] | [who wins] |
-| Mobile Lighthouse | [N]/100 | [N]/100 | [who wins] |
-| LCP (mobile) | [value] | [value] | [who wins] |
-| CLS (mobile) | [value] | [value] | [who wins] |
-| JS console errors | [N] | [N] | [who wins] |
-| Failed network requests | [N] | [N] | [who wins] |
-| CMS / stack | [name] | [name] | — |
-| Hosting / CDN | [name] | [name] | — |
-| Analytics | [list or ❌] | [list or ❌] | [who wins] |
-| Ad pixels | [list or ❌] | [list or ❌] | [who wins] |
-| Live chat | ✅/❌ | ✅/❌ | — |
-| Pricing page | ✅/❌ | ✅/❌ | — |
-| Blog / content | ✅/❌ | ✅/❌ | — |
-| Testimonials | ✅/❌ | ✅/❌ | — |
-| Site search | ✅/❌ | ✅/❌ | — |
-| CTA above fold | ✅/❌ | ✅/❌ | — |
+| Feature | [CLIENT_DOMAIN] | [COMP1_DOMAIN] | [COMP2_DOMAIN] | Leader |
+|---------|-----------------|----------------|----------------|--------|
+| HTTPS | ✅/❌ | ✅/❌ | ✅/❌ | ✅ [domain] or Tie |
+| Security grade | [grade]/[score] | [grade]/[score] | [grade]/[score] | ✅ [domain] or Tie |
+| Mobile Lighthouse | [N]/100 | [N]/100 | [N]/100 | ✅ [domain] or Tie |
+| LCP (mobile) | [value] | [value] | [value] | ✅ [domain] or Tie |
+| CLS (mobile) | [value] | [value] | [value] | ✅ [domain] or Tie |
+| JS console errors | [N] | [N] | [N] | ✅ [domain] or Tie |
+| Failed network requests | [N] | [N] | [N] | ✅ [domain] or Tie |
+| CMS / stack | [name] | [name] | [name] | — |
+| Hosting / CDN | [name] | [name] | [name] | — |
+| Analytics | [list or ❌] | [list or ❌] | [list or ❌] | ✅ [domain] or Tie |
+| Ad pixels | [list or ❌] | [list or ❌] | [list or ❌] | ✅ [domain] or Tie |
+| Live chat | ✅/❌ | ✅/❌ | ✅/❌ | — |
+| Pricing page | ✅/❌ | ✅/❌ | ✅/❌ | — |
+| Blog / content | ✅/❌ | ✅/❌ | ✅/❌ | — |
+| Testimonials | ✅/❌ | ✅/❌ | ✅/❌ | — |
+| Site search | ✅/❌ | ✅/❌ | ✅/❌ | — |
+| CTA above fold | ✅/❌ | ✅/❌ | ✅/❌ | — |
 ```
+
+Note: Add or remove competitor columns to match the actual number of competitors provided. For a single competitor the table reduces to the original 4-column format (Feature / Client / Competitor / Gap?).
 
 In the Priority Action List and Talking Points, reference competitor gaps
 explicitly where they exist. At least 2 talking points should be competitor-
-driven if a competitor was analysed.
+driven if any competitors were analysed.
 
 ---
 
