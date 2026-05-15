@@ -46,6 +46,26 @@ Type `/upsell` in Claude Code and the agent will:
 
 ## Setup
 
+### Quick install (Windows)
+
+Download and double-click `setup.bat`. It handles everything automatically:
+
+| Step | What it does |
+|---|---|
+| **1. Node.js** | Checks for Node 18+. Installs via `winget` if missing; prompts for manual install if winget unavailable |
+| **2. Claude Code** | Installs `@anthropic-ai/claude-code` globally via npm if not already present |
+| **3. Login** | Runs `claude auth login` — opens a browser to sign in with your Claude account (Pro, Team, or Enterprise required) |
+| **4. Download repo** | Clones the repo to `%USERPROFILE%\Desktop\Sales-Agent` via git, or downloads and extracts a ZIP if git is not installed |
+| **5. Browser tools** | Runs `claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest` |
+
+When setup finishes, Claude Code opens automatically. Type `/upsell https://client-website.com` to run your first audit.
+
+> **Note:** First run downloads Chromium (~180MB). Subsequent runs skip this step.
+
+---
+
+### Manual setup
+
 ### 1. Clone the repo
 
 ```bash
